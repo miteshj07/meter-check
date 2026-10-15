@@ -53,9 +53,18 @@ const templates: Record<string, string | null> = {};
 const wanted = [...new Set(calls.map((c) => c.template))];
 if (wanted.length) {
   const { readTemplateModels } = await import('./templates.ts');
-  conn.metadata.pollTimeout = 180_000; conn.metadata.pollInterval = 2_000; // the default gives up after ten seconds
-  const res: any = await conn.metadata.retrieve({ apiVersion: 67, singlePackage: true, unpackaged: { version: '67.0', types: [{ name: 'GenAiPromptTemplate', members: wanted }] } as any }).complete();
-  if (res?.zipFile) for (const t of readTemplateModels(res.zipFile)) templates[t.name] = t.model;
+  // A metadata retrieve is queued on Salesforce's side and can sit in Pending for minutes on a busy sandbox (seen on
+  // Lakewood, 15 Oct 2026). Wait a bounded time; without the models the report still runs, with tier shown as a range.
+  conn.metadata.pollTimeout = 90_000; conn.metadata.pollInterval = 3_000;
+  const t1 = Date.now();
+  try {
+    const res: any = await conn.metadata.retrieve({ apiVersion: 67, singlePackage: true, unpackaged: { version: '67.0', types: [{ name: 'GenAiPromptTemplate', members: wanted }] } as any }).complete();
+    if (res?.zipFile) for (const t of readTemplateModels(res.zipFile)) templates[t.name] = t.model;
+    process.stderr.write(`  templates read in ${((Date.now() - t1) / 1000).toFixed(0)}s\n`);
+  } catch (e: any) {
+    process.stderr.write(`  template models not read (${String(e?.message).slice(0, 60)} after ${((Date.now() - t1) / 1000).toFixed(0)}s); tiers shown as a range\n`);
+    for (const t of wanted) templates[t] = null;
+  }
 }
 const report = build({ org: { name: alias, sandbox, scannedAt: new Date().toISOString() }, promptCalls: calls, templates, unmetered: licence, data360: await readData360(s).catch(() => ({ streams: [], lakeObjects: [], transforms: [], insights: [] })), jobs, agents, alerts });
 mkdirSync('out', { recursive: true });
