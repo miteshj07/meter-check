@@ -1,6 +1,7 @@
 // Dev runner: node src/cli.ts <sf org alias>. Uses the sf CLI's own session; reads only.
 import { readFlows, promptCalls } from './flows.ts';
 import { readUnmetered } from './licence.ts';
+import { readData360, rowsPerMonth, runsPerMonth, credits } from './data360.ts';
 
 const alias = process.argv[2];
 if (!alias) { console.error('usage: node src/cli.ts <sf org alias>'); process.exit(2); }
@@ -18,3 +19,15 @@ const licence = await readUnmetered(s);
 console.log(`${alias}: ${flows.length} active flows read in ${((Date.now() - t0) / 1000).toFixed(1)}s; ${flows.filter((f) => f.prompts.length).length} call prompt templates`);
 console.log(`unmetered licence: ${licence.exists ? `${licence.assigned} of ${licence.total} assigned (${licence.developerName})` : 'not in this org, so every prompt run is metered'}`);
 for (const c of calls) console.log(`  ${c.runsAs === 'automated process' ? 'METERED ' : 'depends '} ${c.flow.label}: runs when ${c.flow.when}; calls ${c.template}${c.decisions.length ? ` only after the decision${c.decisions.length === 1 ? '' : 's'} ${c.decisions.join(', ')}` : ' on every run'} | ${c.why}`);
+
+const sandbox = conn.instanceUrl.includes('.sandbox.');
+try {
+  const d = await readData360(s);
+  console.log(`Data 360: ${d.streams.length} streams (${d.streams.filter((x) => x.status === 'ACTIVE').length} active), ${d.lakeObjects.length} lake objects, ${d.transforms.length} transforms, ${d.insights.length} calculated insights`);
+  for (const st of d.streams) {
+    const lake = d.lakeObjects.find((l) => l.name === st.lakeObject);
+    const rows = rowsPerMonth(st, lake);
+    console.log(`  ${st.status === 'ACTIVE' ? 'ACTIVE  ' : 'inactive'} ${st.name}: ${st.frequency}${st.hours ? ' x' + st.hours + '/day' : ''} ${st.mode}${st.fullRefreshEveryDays ? ', full refresh every ' + st.fullRefreshEveryDays : ''} | last run ${st.lastRun?.slice(0, 10) ?? 'never'}, ${st.rowsLastRun} rows added last run, ${st.rowsTotal} in total${lake ? `, lake object holds ${lake.records}` : ''} | about ${runsPerMonth(st)} runs and ${rows.low === rows.high ? rows.high : rows.low + ' to ' + rows.high} rows a month, ${credits(rows.high, sandbox)} credits`);
+  }
+  for (const t of d.transforms) console.log(`  transform ${t.name}: ${t.type} ${t.status} every ${t.frequency ?? '?'}, last run ${t.lastRun?.slice(0, 10) ?? 'never'} ${t.lastRunStatus ?? ''}`);
+} catch (e: any) { console.log(`Data 360: not readable (${String(e.message).slice(0, 120)})`); }
