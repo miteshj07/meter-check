@@ -17,4 +17,4 @@ const calls = promptCalls(flows);
 const licence = await readUnmetered(s);
 console.log(`${alias}: ${flows.length} active flows read in ${((Date.now() - t0) / 1000).toFixed(1)}s; ${flows.filter((f) => f.prompts.length).length} call prompt templates`);
 console.log(`unmetered licence: ${licence.exists ? `${licence.assigned} of ${licence.total} assigned (${licence.developerName})` : 'not in this org, so every prompt run is metered'}`);
-for (const c of calls) console.log(`  ${c.runsAs === 'automated process' ? 'METERED ' : 'depends '} ${c.flow.name} -> ${c.template} | ${c.flow.triggerType ?? c.flow.processType}${c.flow.object ? ' on ' + c.flow.object : ''} | ${c.why}`);
+for (const c of calls) console.log(`  ${c.runsAs === 'automated process' ? 'METERED ' : 'depends '} ${c.flow.label}: runs when ${c.flow.when}; calls ${c.template}${c.decisions.length ? ` only after the decision${c.decisions.length === 1 ? '' : 's'} ${c.decisions.join(', ')}` : ' on every run'} | ${c.why}`);
