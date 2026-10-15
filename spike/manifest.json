@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Meter Check spike (not for release)",
+  "version": "0.0.1",
+  "description": "Spike: can an extension read the Salesforce session and call the Tooling API, including in an org that signs in with passkeys?",
+  "permissions": ["cookies", "storage", "activeTab"],
+  "host_permissions": [
+    "https://*.salesforce.com/*",
+    "https://*.force.com/*",
+    "https://*.salesforce-setup.com/*",
+    "https://*.cloudforce.com/*",
+    "https://*.visualforce.com/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Pre-flight spike" }
+}
