@@ -54,17 +54,18 @@ const wanted = [...new Set(calls.map((c) => c.template))];
 if (wanted.length) {
   const { readTemplateModels } = await import('./templates.ts');
   // A metadata retrieve is queued on Salesforce's side and can sit in Pending for minutes on a busy sandbox (seen on
-  // Lakewood, 15 Oct 2026). Wait a bounded time; without the models the report still runs, with tier shown as a range.
-  conn.metadata.pollTimeout = 90_000; conn.metadata.pollInterval = 3_000;
+  // Lakewood, 15 Oct 2026). Poll it ourselves for a bounded time; the library's own poll signals a timeout as an event,
+  // not an error. Without the models the report still runs, with the tier shown as a range.
   const t1 = Date.now();
-  try {
-    const res: any = await conn.metadata.retrieve({ apiVersion: 67, singlePackage: true, unpackaged: { version: '67.0', types: [{ name: 'GenAiPromptTemplate', members: wanted }] } as any }).complete();
-    if (res?.zipFile) for (const t of readTemplateModels(res.zipFile)) templates[t.name] = t.model;
-    process.stderr.write(`  templates read in ${((Date.now() - t1) / 1000).toFixed(0)}s\n`);
-  } catch (e: any) {
-    process.stderr.write(`  template models not read (${String(e?.message).slice(0, 60)} after ${((Date.now() - t1) / 1000).toFixed(0)}s); tiers shown as a range\n`);
-    for (const t of wanted) templates[t] = null;
+  const started: any = await conn.metadata.retrieve({ apiVersion: 67, singlePackage: true, unpackaged: { version: '67.0', types: [{ name: 'GenAiPromptTemplate', members: wanted }] } as any });
+  let zip: string | null = null;
+  while (Date.now() - t1 < 90_000) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    const st: any = await conn.metadata.checkRetrieveStatus(started.id);
+    if (st.done) { zip = st.zipFile ?? null; break; }
   }
+  if (zip) { for (const t of readTemplateModels(zip)) templates[t.name] = t.model; process.stderr.write(`  templates read in ${((Date.now() - t1) / 1000).toFixed(0)}s\n`); }
+  else { for (const t of wanted) templates[t] = null; process.stderr.write(`  template models not read after ${((Date.now() - t1) / 1000).toFixed(0)}s; tiers shown as a range\n`); }
 }
 const report = build({ org: { name: alias, sandbox, scannedAt: new Date().toISOString() }, promptCalls: calls, templates, unmetered: licence, data360: await readData360(s).catch(() => ({ streams: [], lakeObjects: [], transforms: [], insights: [] })), jobs, agents, alerts });
 mkdirSync('out', { recursive: true });
