@@ -1,10 +1,14 @@
 // Dev runner: node src/cli.ts <sf org alias>. Uses the sf CLI's own session; reads only.
 import { readFlows, promptCalls } from './flows.ts';
+import { query } from './salesforce.ts';
 import { readUnmetered } from './licence.ts';
 import { readData360, rowsPerMonth, runsPerMonth, credits } from './data360.ts';
 import { readScheduledApex } from './apex.ts';
 import { readAgents, billing, isDefaultAgent, ACTION_CREDITS } from './agents.ts';
 import { readAlerts } from './alerts.ts';
+import { build, markdown, html } from './report.ts';
+import { tierFor } from './rates.ts';
+import { writeFileSync, mkdirSync } from 'node:fs';
 
 const alias = process.argv[2];
 if (!alias) { console.error('usage: node src/cli.ts <sf org alias>'); process.exit(2); }
@@ -43,3 +47,18 @@ console.log(`Agents: ${agents.length}, ${agents.filter((a) => a.active).length} 
 for (const a of agents) console.log(`  ${a.active ? 'ACTIVE  ' : 'inactive'} ${a.label} (${a.name}) ${a.type}${a.active ? ' v' + a.activeVersion : ''} | ${billing(a)}${isDefaultAgent(a) ? ' | the default agent: global search bills through it once Coworker is on' : ''}`);
 const alerts = await readAlerts(s);
 console.log(`Threshold alerts: ${alerts.length ? alerts.map((a) => `${a.name} ${a.type} ${a.scope} ${a.trigger} ${a.status}`).join('; ') : 'none set. Alerts notify, they never stop spend, but without one nobody is told at all'}`);
+
+// The model behind each template the flows call, from a Metadata API retrieve (there is no queryable object).
+const templates: Record<string, string | null> = {};
+const wanted = [...new Set(calls.map((c) => c.template))];
+if (wanted.length) {
+  const { readTemplateModels } = await import('./templates.ts');
+  conn.metadata.pollTimeout = 180_000; conn.metadata.pollInterval = 2_000; // the default gives up after ten seconds
+  const res: any = await conn.metadata.retrieve({ apiVersion: 67, singlePackage: true, unpackaged: { version: '67.0', types: [{ name: 'GenAiPromptTemplate', members: wanted }] } as any }).complete();
+  if (res?.zipFile) for (const t of readTemplateModels(res.zipFile)) templates[t.name] = t.model;
+}
+const report = build({ org: { name: alias, sandbox, scannedAt: new Date().toISOString() }, promptCalls: calls, templates, unmetered: licence, data360: await readData360(s).catch(() => ({ streams: [], lakeObjects: [], transforms: [], insights: [] })), jobs, agents, alerts });
+mkdirSync('out', { recursive: true });
+writeFileSync(`out/${alias}.md`, markdown(report));
+writeFileSync(`out/${alias}.html`, html(report, conn.instanceUrl));
+console.log(`report: ${report.findings.length} lines, counted ${report.total.low} to ${report.total.high} credits a month; models: ${JSON.stringify(Object.fromEntries(Object.entries(templates).map(([k, v]) => [k, `${v} (${tierFor(v)})`])))}; wrote out/${alias}.md and out/${alias}.html`);

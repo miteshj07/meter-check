@@ -4,3 +4,4 @@ dist/
 *.zip
 engine/package-lock.json
 engine/scratch/
+out/
