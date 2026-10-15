@@ -1,7 +1,7 @@
 // Data 360 work that spends Flex Credits by design: every stream refresh and transform run processes rows, and the
 // rate card prices rows processed (Data 360 Prep: 40 credits per million rows in production, 32 in a sandbox, 21 Apr
 // 2026). All of it is readable with plain SOQL on setup objects, checked on the Lakewood partial sandbox, 15 Oct 2026.
-import { query, type Session } from './salesforce.ts';
+import { optional, query, type Session } from './salesforce.ts';
 
 export interface Stream {
   name: string;
@@ -20,12 +20,14 @@ export interface Transform { name: string; type: string; status: string; frequen
 export interface Insight { name: string; status: string; lastRun: string | null }
 export interface Data360 { streams: Stream[]; lakeObjects: LakeObject[]; transforms: Transform[]; insights: Insight[] }
 
+// Orgs without Data 360 have none of these objects; that reads as no streams, which is the truth.
 export async function readData360(s: Session): Promise<Data360> {
+  const none: any[] = [];
   const [streams, lakes, transforms, insights] = await Promise.all([
-    query<any>(s, 'SELECT Name, DataStreamStatus, RefreshFrequency, RefreshHours, RefreshMode, FullRefreshIntervalDays, LastRefreshDate, LastNumberOfRowsAddedCount, TotalNumberOfRowsAdded, TotalRowsProcessed FROM DataStream'),
-    query<any>(s, 'SELECT Id, Name, TotalRecords, LastRefreshDate FROM DataLakeObjectInstance'),
-    query<any>(s, 'SELECT Name, Type, DataTransformStatus, FullRunFrequency, LastRunTime, LastRunStatus FROM MktDataTransform'),
-    query<any>(s, 'SELECT Name, CalculatedInsightStatus, LastRunDateTime FROM MktCalculatedInsight'),
+    optional(() => query<any>(s, 'SELECT Name, DataStreamStatus, RefreshFrequency, RefreshHours, RefreshMode, FullRefreshIntervalDays, LastRefreshDate, LastNumberOfRowsAddedCount, TotalNumberOfRowsAdded, TotalRowsProcessed FROM DataStream'), none),
+    optional(() => query<any>(s, 'SELECT Id, Name, TotalRecords, LastRefreshDate FROM DataLakeObjectInstance'), none),
+    optional(() => query<any>(s, 'SELECT Name, Type, DataTransformStatus, FullRunFrequency, LastRunTime, LastRunStatus FROM MktDataTransform'), none),
+    optional(() => query<any>(s, 'SELECT Name, CalculatedInsightStatus, LastRunDateTime FROM MktCalculatedInsight'), none),
   ]);
   // DataStream has no link to its lake object; the names match once the usual Stream suffix is dropped.
   const lakeFor = (name: string) => lakes.find((l) => l.Name === name || l.Name === name.replace(/Stream$/, ''))?.Name ?? null;

@@ -2,6 +2,9 @@
 import { readFlows, promptCalls } from './flows.ts';
 import { readUnmetered } from './licence.ts';
 import { readData360, rowsPerMonth, runsPerMonth, credits } from './data360.ts';
+import { readScheduledApex } from './apex.ts';
+import { readAgents, billing, isDefaultAgent, ACTION_CREDITS } from './agents.ts';
+import { readAlerts } from './alerts.ts';
 
 const alias = process.argv[2];
 if (!alias) { console.error('usage: node src/cli.ts <sf org alias>'); process.exit(2); }
@@ -31,3 +34,12 @@ try {
   }
   for (const t of d.transforms) console.log(`  transform ${t.name}: ${t.type} ${t.status} every ${t.frequency ?? '?'}, last run ${t.lastRun?.slice(0, 10) ?? 'never'} ${t.lastRunStatus ?? ''}`);
 } catch (e: any) { console.log(`Data 360: not readable (${String(e.message).slice(0, 120)})`); }
+
+const jobs = await readScheduledApex(s);
+console.log(`Scheduled Apex: ${jobs.length} job${jobs.length === 1 ? '' : 's'}`);
+for (const j of jobs) console.log(`  ${j.aiCalls.length ? 'METERED ' : 'no AI   '} ${j.job} (${j.namespace ? j.namespace + '.' : ''}${j.className}) ${j.cron ?? 'no schedule read'} = about ${j.runsPerMonth ?? '?'} runs a month${j.aiCalls.length ? ' | calls ' + j.aiCalls.map((c) => `${c.className}: ${c.apis.join('; ')}`).join(', ') : ''}${j.hidden.length ? ' | packaged, code not readable: ' + j.hidden.join(', ') : ''}`);
+const agents = await readAgents(s);
+console.log(`Agents: ${agents.length}, ${agents.filter((a) => a.active).length} active; each action ${ACTION_CREDITS[sandbox ? 'sandbox' : 'production']} credits`);
+for (const a of agents) console.log(`  ${a.active ? 'ACTIVE  ' : 'inactive'} ${a.label} (${a.name}) ${a.type}${a.active ? ' v' + a.activeVersion : ''} | ${billing(a)}${isDefaultAgent(a) ? ' | the default agent: global search bills through it once Coworker is on' : ''}`);
+const alerts = await readAlerts(s);
+console.log(`Threshold alerts: ${alerts.length ? alerts.map((a) => `${a.name} ${a.type} ${a.scope} ${a.trigger} ${a.status}`).join('; ') : 'none set. Alerts notify, they never stop spend, but without one nobody is told at all'}`);
