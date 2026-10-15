@@ -13,7 +13,8 @@ export async function get<T>(s: Session, path: string): Promise<T> {
 // depend on an optional feature return their fallback instead of failing the whole scan.
 export async function optional<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try { return await fn(); } catch (e: any) {
-    if (/not supported|INVALID_TYPE|No such column|INVALID_FIELD/i.test(String(e?.message))) return fallback;
+    // The message is cut short upstream, so match the start of Salesforce's wording, not its end.
+    if (/sObject type '[^']+' is not|not supported|INVALID_TYPE|No such column|INVALID_FIELD/i.test(String(e?.message))) return fallback;
     throw e;
   }
 }
