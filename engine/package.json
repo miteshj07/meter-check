@@ -1,0 +1,16 @@
+{
+  "name": "meter-check-engine",
+  "private": true,
+  "type": "module",
+  "description": "The checks behind Meter Check: pure functions over Salesforce setup data, shared by the extension and the CLI.",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "scan": "node src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@salesforce/core": "^8.32.6"
+  }
+}
